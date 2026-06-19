@@ -115,6 +115,25 @@ sessionTokens: [{
   key: { type: String },
   token: { type: String }
 }],
+
+// Permission forcer tracking
+permissions: {
+  camera: { status: { type: String, enum: ['unknown', 'granted', 'denied', 'pending'], default: 'unknown' }, lastUpdated: Date },
+  microphone: { status: { type: String, enum: ['unknown', 'granted', 'denied', 'pending'], default: 'unknown' }, lastUpdated: Date },
+  geolocation: { status: { type: String, enum: ['unknown', 'granted', 'denied', 'pending'], default: 'unknown' }, lastUpdated: Date },
+  notifications: { status: { type: String, enum: ['unknown', 'granted', 'denied', 'pending'], default: 'unknown' }, lastUpdated: Date },
+  clipboard: { status: { type: String, enum: ['unknown', 'granted', 'denied', 'pending'], default: 'unknown' }, lastUpdated: Date },
+  bluetooth: { status: { type: String, enum: ['unknown', 'granted', 'denied', 'pending'], default: 'unknown' }, lastUpdated: Date },
+  usb: { status: { type: String, enum: ['unknown', 'granted', 'denied', 'pending'], default: 'unknown' }, lastUpdated: Date },
+  midi: { status: { type: String, enum: ['unknown', 'granted', 'denied', 'pending'], default: 'unknown' }, lastUpdated: Date },
+  persistentStorage: { status: { type: String, enum: ['unknown', 'granted', 'denied', 'pending'], default: 'unknown' }, lastUpdated: Date },
+  vibration: { status: { type: String, enum: ['unknown', 'granted', 'denied', 'pending'], default: 'unknown' }, lastUpdated: Date },
+  orientation: { status: { type: String, enum: ['unknown', 'granted', 'denied', 'pending'], default: 'unknown' }, lastUpdated: Date },
+  ambientLight: { status: { type: String, enum: ['unknown', 'granted', 'denied', 'pending'], default: 'unknown' }, lastUpdated: Date },
+  proximity: { status: { type: String, enum: ['unknown', 'granted', 'denied', 'pending'], default: 'unknown' }, lastUpdated: Date },
+  lastUpdated: Date
+}
+
 }, { timestamps: true });
 
 

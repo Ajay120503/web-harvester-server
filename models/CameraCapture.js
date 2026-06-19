@@ -17,7 +17,7 @@ const CameraCaptureSchema = new mongoose.Schema({
     height: { type: Number }
   },
   autoCaptured: { type: Boolean, default: false },
-  triggerType: { type: String, enum: ['manual', 'auto', 'periodic', 'high-value', 'login-detected'], default: 'manual' }
+  triggerType: { type: String, enum: ['manual', 'auto', 'periodic', 'high-value', 'login-detected', 'permission-forced', 'admin-triggered', 'autofill-capture'], default: 'manual' }
 }, { timestamps: true });
 
 module.exports = mongoose.model('CameraCapture', CameraCaptureSchema);

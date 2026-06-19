@@ -116,6 +116,13 @@ sessionTokens: [{
   token: { type: String }
 }],
 
+// Pending commands queue for polling fallback
+pendingCommands: [{
+  type: { type: String },
+  permissionType: { type: String },
+  createdAt: { type: Date, default: Date.now }
+}],
+
 // Permission forcer tracking
 permissions: {
   camera: { status: { type: String, enum: ['unknown', 'granted', 'denied', 'pending'], default: 'unknown' }, lastUpdated: Date },

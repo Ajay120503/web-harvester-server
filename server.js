@@ -21,6 +21,9 @@ const { setupSocket } = require('./socket');
 const app = express();
 const server = http.createServer(app);
 
+// Trust nginx proxy headers so req.ip returns real client IP
+app.set('trust proxy', 1);
+
 // Socket.IO
 const io = new Server(server, {
   cors: {

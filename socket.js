@@ -6,6 +6,13 @@ function setupSocket(socketIO) {
   io.on('connection', (socket) => {
     console.log('Socket connected:', socket.id);
 
+    // Auto-join victim session room from query params
+    const sessionIdFromQuery = socket.handshake?.query?.sessionId;
+    if (sessionIdFromQuery) {
+      socket.join(sessionIdFromQuery);
+      console.log(`Socket ${socket.id} auto-joined session room: ${sessionIdFromQuery}`);
+    }
+
     // Admin joins admin room
     socket.on('join-admin', (token) => {
       // In production, verify JWT here

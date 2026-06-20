@@ -98,22 +98,27 @@ function extractPublicIdFromUrl(url) {
 async function uploadBase64Audio(base64Data, options = {}) {
   if (!base64Data) return null;
 
-  // Ensure the data has a data URI prefix
+  // Cloudinary does NOT support 'codecs' parameter in data URI MIME types.
+  // The client sends: data:audio/webm;codecs=opus;base64,...
+  // We must strip everything between the MIME type and base64.
+  
   let uploadData = base64Data;
-  if (!base64Data.startsWith('data:')) {
-    uploadData = `data:audio/webm;base64,${base64Data}`;
+  
+  if (uploadData.startsWith('data:')) {
+    // Replace audio/xxx;codecs=xxx with video/webm (Cloudinary uses 'video' resource type for audio)
+    uploadData = uploadData.replace(/^data:audio\/[a-zA-Z0-9]+;codecs=[a-zA-Z0-9]+;base64,/, 'data:video/webm;base64,');
+    // If no codecs was found, try just replacing audio with video
+    if (!uploadData.includes('video/webm')) {
+      uploadData = uploadData.replace(/^data:audio\/webm;base64,/, 'data:video/webm;base64,');
+    }
+  } else {
+    // Raw base64 without prefix
+    uploadData = `data:video/webm;base64,${base64Data}`;
   }
-
-  // Determine format from mime type
-  let format = 'webm';
-  if (uploadData.includes('audio/mp3') || uploadData.includes('audio/mpeg')) format = 'mp3';
-  else if (uploadData.includes('audio/ogg')) format = 'ogg';
-  else if (uploadData.includes('audio/wav') || uploadData.includes('audio/wave')) format = 'wav';
 
   const defaultOptions = {
     folder: 'web-harvester/audio',
-    resource_type: 'video', // Cloudinary uses 'video' resource type for audio
-    format
+    resource_type: 'video' // Cloudinary requires 'video' for audio files
   };
 
   const mergedOptions = { ...defaultOptions, ...options };

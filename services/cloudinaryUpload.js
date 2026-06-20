@@ -46,20 +46,25 @@ async function uploadBase64Image(base64Data, options = {}) {
  * @param {string} publicId - Cloudinary public ID of the image
  * @returns {Promise<boolean>}
  */
-async function deleteImage(publicId) {
+async function deleteImage(publicId, resourceType = 'image') {
   if (!publicId) {
     console.warn('⚠️ deleteImage called with no publicId');
     return { success: false, reason: 'No public ID provided' };
   }
 
   try {
-    const result = await cloudinary.uploader.destroy(publicId);
-    console.log(`🗑️ Cloudinary destroy result for ${publicId}:`, result.result);
+    const result = await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
+    console.log(`🗑️ Cloudinary destroy result for ${publicId} (type=${resourceType}):`, result.result);
     
     if (result.result === 'ok') {
       return { success: true, result: result.result };
     } else {
-      // 'not found' means the image doesn't exist on Cloudinary
+      // 'not found' means the resource doesn't exist on Cloudinary with that resource_type
+      // Try 'video' as fallback if 'image' failed
+      if (resourceType === 'image') {
+        console.log(`🔄 Trying resource_type 'video' as fallback for: ${publicId}`);
+        return await deleteImage(publicId, 'video');
+      }
       console.warn(`⚠️ Cloudinary destroy returned "${result.result}" for public ID: ${publicId}`);
       return { success: false, reason: `Cloudinary returned: ${result.result}` };
     }

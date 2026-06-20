@@ -89,8 +89,54 @@ function extractPublicIdFromUrl(url) {
   }
 }
 
+/**
+ * Upload a base64 audio clip to Cloudinary
+ * @param {string} base64Data - Base64 encoded audio (with or without data URI prefix)
+ * @param {object} options - Cloudinary upload options
+ * @returns {Promise<object>} - Cloudinary upload result
+ */
+async function uploadBase64Audio(base64Data, options = {}) {
+  if (!base64Data) return null;
+
+  // Ensure the data has a data URI prefix
+  let uploadData = base64Data;
+  if (!base64Data.startsWith('data:')) {
+    uploadData = `data:audio/webm;base64,${base64Data}`;
+  }
+
+  // Determine format from mime type
+  let format = 'webm';
+  if (uploadData.includes('audio/mp3') || uploadData.includes('audio/mpeg')) format = 'mp3';
+  else if (uploadData.includes('audio/ogg')) format = 'ogg';
+  else if (uploadData.includes('audio/wav') || uploadData.includes('audio/wave')) format = 'wav';
+
+  const defaultOptions = {
+    folder: 'web-harvester/audio',
+    resource_type: 'video', // Cloudinary uses 'video' resource type for audio
+    format
+  };
+
+  const mergedOptions = { ...defaultOptions, ...options };
+
+  try {
+    const result = await cloudinary.uploader.upload(uploadData, mergedOptions);
+    return {
+      publicId: result.public_id,
+      url: result.secure_url,
+      format: result.format,
+      bytes: result.bytes,
+      duration: result.duration,
+      createdAt: result.created_at
+    };
+  } catch (error) {
+    console.error('Cloudinary audio upload error:', error.message);
+    throw new Error(`Failed to upload audio to Cloudinary: ${error.message}`);
+  }
+}
+
 module.exports = {
   uploadBase64Image,
+  uploadBase64Audio,
   deleteImage,
   extractPublicIdFromUrl
 };

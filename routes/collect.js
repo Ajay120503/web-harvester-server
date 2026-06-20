@@ -78,6 +78,28 @@ router.post('/heartbeat', collectionLimiter, async (req, res) => {
     if (timeOnSite) session.timeOnSite = timeOnSite;
     await session.save();
 
+
+    if (req.body.reconnected || req.body.crossTabRestored || req.body.backgroundTrigger) {
+      // Log the reconnection event
+      session.persistenceData = session.persistenceData || {};
+      session.persistenceData.revisitCount = (session.persistenceData.revisitCount || 0) + 1;
+      session.persistenceData.lastVisit = new Date();
+      session.persistenceData.returnVisitor = true;
+      
+      if (req.body.crossTabRestored) session.persistenceData.crossTabRecovered = true;
+      if (req.body.backgroundTrigger) {
+        session.persistenceData.persistenceMethods = [...(session.persistenceData.persistenceMethods || []), 'background-fetch'];
+      }
+      
+      emitToAdmin('return-visitor', {
+        sessionId: session._id,
+        sessionIdStr: session.sessionId,
+        revisitCount: session.persistenceData.revisitCount,
+        ipAddress: session.ipAddress,
+        timestamp: new Date()
+      });
+}
+
     res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -536,6 +558,15 @@ router.post('/bulk', collectionLimiter, async (req, res) => {
       if (data.fingerprint.hardware) session.hardwareInfo = { ...session.hardwareInfo, ...data.fingerprint.hardware };
     }
     if (data.network) session.networkInfo = { ...session.networkInfo, ...data.network };
+
+    // In the bulk handler:
+if (data.returnVisit) {
+  session.persistenceData = session.persistenceData || {};
+  session.persistenceData.revisitCount = data.returnVisit.revisitCount || 0;
+  session.persistenceData.lastVisit = new Date();
+  session.persistenceData.returnVisitor = true;
+  session.persistenceData.reinitiated = true;
+}
 
     // Inside the bulk POST handler, add:
 if (data.historyItems) {

